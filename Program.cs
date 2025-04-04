@@ -139,6 +139,14 @@ public class App{
             );
         ";
         command.ExecuteReader();
+        command = connection.CreateCommand();
+        command.CommandText = 
+            @"
+            INSERT INTO `user` (username, password)
+            VALUES ('dummy', 'dummy')
+            "
+        ;
+        command.ExecuteReader();
         Console.WriteLine("Hello,what would you like to do?");
         Console.WriteLine("1) login");
         Console.WriteLine("2) register");
