@@ -9,7 +9,7 @@ public class App{
     private int giveUserNumberedOptionsAndReturnTheChoice (int[] validOptions) {
         do
         {
-            string userInput = Console.ReadLine();
+            string userInput = Console.ReadLine().ToString();
             if(userInput == "exit"){
                 break;
             }
@@ -32,13 +32,13 @@ public class App{
             System.Environment.Exit(1);
         }
         Console.WriteLine("Set your username");
-        string username = Console.ReadLine();
+        string username = Console.ReadLine().ToString();
         var command = connection.CreateCommand();
         command.CommandText = 
         @"
             SELECT id
             FROM user
-            WHERE username = $username
+            WHERE username = $username;
         ";
         command.Parameters.AddWithValue("$username", username);
         var reader = command.ExecuteReader();
@@ -65,6 +65,7 @@ public class App{
                 password += keyInfo.KeyChar;
             }
         } while (key != ConsoleKey.Enter);
+        Console.Write("\n");
         return password;
     }
     private string validateAndOutputNewPassword(int attempt = 0){
@@ -74,7 +75,7 @@ public class App{
         }
         Console.WriteLine("Set your password");
         string password = maskAndOutputUserInput();
-        Console.WriteLine("\nRepeat the password");
+        Console.WriteLine("Repeat the password");
         
         string passwordConfirmation = maskAndOutputUserInput();
         if(password != passwordConfirmation){
@@ -83,6 +84,43 @@ public class App{
             return validateAndOutputNewPassword(attempt);
         }
         return password;
+    }
+    private bool validateAccountCredentials(string username, int attempt = 0) {
+        if(attempt > 3){
+            Console.WriteLine("Too many failed attempts");
+            return false;
+        }
+        Console.WriteLine("Enter password:");
+        string password = maskAndOutputUserInput();
+        var command = connection.CreateCommand();
+        command.CommandText =
+            @"
+            SELECT password
+            FROM user
+            WHERE username IN (
+                'dummy',
+                $username
+            )
+            ORDER BY id DESC;
+            "
+        ;
+        command.Parameters.AddWithValue(
+            "$username",
+            username
+        );
+        var reader = command.ExecuteReader();
+        reader.Read();
+        string passwordHashEntry = reader.GetString(0);
+        string passwordHash = HashPassword($"{password}-dummy");
+        if(passwordHashEntry != "dummy"){
+            passwordHash = passwordHashEntry;
+        }
+        if(Verify(password, passwordHash)){
+            return true;
+        }
+        Console.WriteLine("User and password don't match any account.");
+        attempt = attempt + 1;
+        return validateAccountCredentials(username, attempt);
     }
 
     public App(){
@@ -109,7 +147,15 @@ public class App{
         int choice = giveUserNumberedOptionsAndReturnTheChoice(
             validOptions
         );
-        if(choice == 2){
+        if(choice == 1){
+            Console.WriteLine("Enter username:");
+            string username = Console.ReadLine().ToString();
+            bool passwordValid = validateAccountCredentials(username);
+            if(passwordValid){
+                Console.WriteLine($"welcome back {username}");
+            }
+        }
+        else if(choice == 2){
             string validatedUsername = validateAndOutputUsername();
             string validatedPassword = validateAndOutputNewPassword();
             string passwordHash = HashPassword(validatedPassword);
