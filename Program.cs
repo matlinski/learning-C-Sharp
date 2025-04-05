@@ -26,7 +26,7 @@ public class App{
         } while (true);
         return 0;
     }
-    private string validateAndOutputUsername( int attempt = 0){
+    private string validateUsername( int attempt = 0){
         if(attempt > 3){
             Console.WriteLine("Too many failed attempts");
             System.Environment.Exit(1);
@@ -45,11 +45,11 @@ public class App{
         if(reader.Read()){
             Console.WriteLine("Username already exists, choose another one.");
             attempt = attempt + 1;
-            return validateAndOutputUsername(attempt);
+            return validateUsername(attempt);
         }
         return username;
     }
-    private string maskAndOutputUserInput(){
+    private string maskUserInput(){
         var password = string.Empty;
         ConsoleKey key;
         do {
@@ -68,20 +68,20 @@ public class App{
         Console.Write("\n");
         return password;
     }
-    private string validateAndOutputNewPassword(int attempt = 0){
+    private string validatePassword(int attempt = 0){
         if(attempt > 3){
             Console.WriteLine("Too many failed attempts");
             System.Environment.Exit(1);
         }
         Console.WriteLine("Set your password");
-        string password = maskAndOutputUserInput();
+        string password = maskUserInput();
         Console.WriteLine("Repeat the password");
         
-        string passwordConfirmation = maskAndOutputUserInput();
+        string passwordConfirmation = maskUserInput();
         if(password != passwordConfirmation){
             Console.WriteLine("Passwords don't match");
             attempt = attempt + 1;
-            return validateAndOutputNewPassword(attempt);
+            return validatePassword(attempt);
         }
         return password;
     }
@@ -91,7 +91,7 @@ public class App{
             return false;
         }
         Console.WriteLine("Enter password:");
-        string password = maskAndOutputUserInput();
+        string password = maskUserInput();
         var command = connection.CreateCommand();
         command.CommandText =
             @"
@@ -164,8 +164,8 @@ public class App{
             }
         }
         else if(choice == 2){
-            string validatedUsername = validateAndOutputUsername();
-            string validatedPassword = validateAndOutputNewPassword();
+            string validatedUsername = validateUsername();
+            string validatedPassword = validatePassword();
             string passwordHash = HashPassword(validatedPassword);
             command = connection.CreateCommand();
             command.CommandText = 
