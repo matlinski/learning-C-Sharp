@@ -1,6 +1,22 @@
 // See https://aka.ms/new-console-template for more information
+using System;
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 using static BCrypt.Net.BCrypt;
+
+public class Session{
+    public int userID;
+    public string username;
+    public DateTime loggedInAt;
+    public Session(
+        int id,
+        string name
+    ){
+        userID = id;
+        username = name;
+        DateTime loggedInAt = DateTime.Now;
+    }
+}
 
 public class App{
     private SqliteConnection connection;
@@ -83,17 +99,17 @@ public class App{
         }
         return password;
     }
-    private bool validateAccountCredentials(string username, int attempt = 0) {
+    private int validateAccountCredentials(string username, int attempt = 0) {
         if(attempt > 3){
             Console.WriteLine("Too many failed attempts");
-            return false;
+            return 0;
         }
         Console.WriteLine("Enter password:");
         string password = maskUserInput();
         var command = connection.CreateCommand();
         command.CommandText =
             @"
-            SELECT password
+            SELECT password, id
             FROM user
             WHERE username IN (
                 'dummy',
@@ -114,7 +130,7 @@ public class App{
             passwordHash = passwordHashEntry;
         }
         if(Verify(password, passwordHash)){
-            return true;
+            return Int32.Parse(reader.GetString(1));
         }
         Console.WriteLine("User and password don't match any account.");
         attempt = attempt + 1;
@@ -154,16 +170,15 @@ public class App{
         int choice = giveUserNumberedOptionsAndReturnTheChoice(
             validOptions
         );
+        string username = String.Empty;
+        int userID = 0;
         if(choice == 1){
             Console.WriteLine("Enter username:");
-            string username = Console.ReadLine().ToString();
-            bool passwordValid = validateAccountCredentials(username);
-            if(passwordValid){
-                Console.WriteLine($"welcome back {username}");
-            }
+            username = Console.ReadLine().ToString();
+            userID =  validateAccountCredentials(username);
         }
         else if(choice == 2){
-            string validatedUsername = validateUsername();
+            username = validateUsername();
             string validatedPassword = validatePassword();
             string passwordHash = HashPassword(validatedPassword);
             command = connection.CreateCommand();
@@ -175,13 +190,31 @@ public class App{
             ;
             command.Parameters.AddWithValue(
                 "$username",
-                validatedUsername
+                username
             );
             command.Parameters.AddWithValue(
                 "$password",
                 passwordHash
             );
-            command.ExecuteReader();        }
+            command.ExecuteReader();
+            command = connection.CreateCommand();
+            command.CommandText = "SELECT id FROM user WHERE username = $username";
+            command.Parameters.AddWithValue(
+                "$username",
+                username
+            );
+            var reader = command.ExecuteReader();
+            reader.Read();
+            userID = Int32.Parse(reader.GetString(0));
+        }
+        if(userID == 0){
+            return;
+        }
+        Session session = new Session(
+            userID,
+            username
+        );
+        Console.WriteLine($"welcome back {session.username}");
     }
 }
 
