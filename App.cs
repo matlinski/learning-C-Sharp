@@ -1,5 +1,6 @@
 // See https://aka.ms/new-console-template for more information
 using System;
+using System.IO;
 using System.Globalization;
 using Microsoft.Data.Sqlite;
 using static BCrypt.Net.BCrypt;
@@ -7,20 +8,30 @@ using static BCrypt.Net.BCrypt;
 public class Session{
     public int userID;
     public string username;
+    public string hash;
     public DateTime loggedInAt;
     public Session(
         int id,
-        string name
+        string name,
+        string cachedHash = "none"
     ){
         userID = id;
         username = name;
         DateTime loggedInAt = DateTime.Now;
+        if(cachedHash == "none"){
+            hash = HashPassword(
+                userID+"__"+username+"__"+loggedInAt+Guid.NewGuid()
+            ).Replace('/', '\\');
+            return;
+        }
+        hash = cachedHash;
     }
 }
 
 public class App{
+    private string sessionDirectory = "/tmp/session";
     private SqliteConnection connection;
-    private int giveUserNumberedOptionsAndReturnTheChoice (int[] validOptions) {
+    private int giveUserNumberedOptions (int[] validOptions) {
         do
         {
             string userInput = Console.ReadLine().ToString();
@@ -35,6 +46,7 @@ public class App{
                 foreach (int validOption in validOptions){
                     Console.WriteLine(String.Concat("- ", validOption));
                 }
+                return 0;
             }
             return action;
         } while (true);
@@ -138,6 +150,10 @@ public class App{
     }
 
     public App(){
+        if (!Directory.Exists(sessionDirectory))
+        {
+            Directory.CreateDirectory(sessionDirectory);
+        }
         connection = new SqliteConnection("Data Source=app.db");
         connection.Open();
         var command = connection.CreateCommand();
@@ -151,6 +167,15 @@ public class App{
                 modified_at TEXT DEFAULT (current_timestamp),
                 UNIQUE(username)
             );
+            CREATE TABLE IF NOT EXISTS `session` (
+                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                hash TEXT NOT NULL,
+                created_at TEXT DEFAULT (current_timestamp) NOT NULL,
+                UNIQUE(hash),
+                CONSTRAINT session_user_FK FOREIGN KEY (user_id)
+                REFERENCES `user`(id) ON DELETE CASCADE ON UPDATE CASCADE
+            );
         ";
         command.ExecuteReader();
         command = connection.CreateCommand();
@@ -162,58 +187,101 @@ public class App{
             "
         ;
         command.ExecuteReader();
-        Console.WriteLine("Hello,what would you like to do?");
-        Console.WriteLine("1) login");
-        Console.WriteLine("2) register");
-        Console.WriteLine("Pass exit to terminate");
-        int[] validOptions = {1, 2};
-        int choice = giveUserNumberedOptionsAndReturnTheChoice(
-            validOptions
-        );
-        string username = String.Empty;
-        int userID = 0;
-        if(choice == 1){
-            Console.WriteLine("Enter username:");
-            username = Console.ReadLine().ToString();
-            userID =  validateAccountCredentials(username);
-        }
-        else if(choice == 2){
-            username = validateUsername();
-            string validatedPassword = validatePassword();
-            string passwordHash = HashPassword(validatedPassword);
-            command = connection.CreateCommand();
-            command.CommandText = 
-                @"
-                INSERT INTO `user` (username, password)
-                VALUES ($username, $password)
-                "
-            ;
-            command.Parameters.AddWithValue(
-                "$username",
-                username
+        DirectoryInfo sessionDirInfo = new DirectoryInfo(sessionDirectory);
+        string sessionHash = sessionDirInfo.GetFiles().Select(fi=>fi.Name).FirstOrDefault();
+        command = connection.CreateCommand();
+        command.CommandText =
+            @"
+            SELECT user_id FROM `session`
+            WHERE `hash` = $hash
+            "
+        ;
+        command.Parameters.AddWithValue("$hash", sessionHash);
+        var reader = command.ExecuteReader();
+        reader.Read();
+        int userID = Int32.Parse(reader.GetString(0)); //TODO: if no result set 0
+        command = connection.CreateCommand();
+        command.CommandText = 
+            @"
+            SELECT username FROM user WHERE id = $id
+            "
+        ;
+        command.Parameters.AddWithValue("$id", userID);
+        reader = command.ExecuteReader();
+        reader.Read();
+        string username = reader.GetString(0); //TODO: if no result set an empty string
+        if(userID == 0) {
+            Console.WriteLine("Hello,what would you like to do?");
+            Console.WriteLine("1) login");
+            Console.WriteLine("2) register");
+            Console.WriteLine("Pass exit to terminate");
+            int[] validOptions = {1, 2};
+            int choice = giveUserNumberedOptions(
+                validOptions
             );
-            command.Parameters.AddWithValue(
-                "$password",
-                passwordHash
-            );
-            command.ExecuteReader();
-            command = connection.CreateCommand();
-            command.CommandText = "SELECT id FROM user WHERE username = $username";
-            command.Parameters.AddWithValue(
-                "$username",
-                username
-            );
-            var reader = command.ExecuteReader();
-            reader.Read();
-            userID = Int32.Parse(reader.GetString(0));
-        }
-        if(userID == 0){
-            return;
+            if(choice == 1){
+                Console.WriteLine("Enter username:");
+                username = Console.ReadLine().ToString();
+                userID =  validateAccountCredentials(username);
+            }
+            else if(choice == 2){
+                username = validateUsername();
+                string validatedPassword = validatePassword();
+                string passwordHash = HashPassword(validatedPassword);
+                command = connection.CreateCommand();
+                command.CommandText = 
+                    @"
+                    INSERT INTO `user` (username, password)
+                    VALUES ($username, $password)
+                    "
+                ;
+                command.Parameters.AddWithValue(
+                    "$username",
+                    username
+                );
+                command.Parameters.AddWithValue(
+                    "$password",
+                    passwordHash
+                );
+                command.ExecuteReader();
+                command = connection.CreateCommand();
+                command.CommandText = "SELECT id FROM user WHERE username = $username";
+                command.Parameters.AddWithValue(
+                    "$username",
+                    username
+                );
+                reader = command.ExecuteReader();
+                reader.Read();
+                userID = Int32.Parse(reader.GetString(0));
+            }
+            if(userID == 0){
+                return;
+            }
         }
         Session session = new Session(
             userID,
             username
         );
+        command = connection.CreateCommand();
+        command.CommandText =
+            @"
+            INSERT INTO session (user_id, hash)
+            VALUES ($user_id, $hash)
+            "
+        ;
+        command.Parameters.AddWithValue(
+            "$user_id",
+            session.userID
+        );
+        command.Parameters.AddWithValue(
+            "hash",
+            session.hash
+        );
+        command.ExecuteReader();
+        StreamWriter sessionFile = new StreamWriter(
+            sessionDirectory+'/'+session.hash
+        );
+        // session.hash
         Console.WriteLine($"welcome back {session.username}");
     }
 }
